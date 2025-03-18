@@ -78,7 +78,7 @@ class CoachBot:
         self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
         self.sheets_service = None
         self.started = False
-        self.verified_users = {}
+        # Se eliminan las verificaciones de email, acceso libre
         self.conversation_history = {}
         self.user_threads = {}
         self.pending_requests = set()
@@ -106,28 +106,20 @@ class CoachBot:
     def _init_db(self):
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    chat_id INTEGER PRIMARY KEY,
-                    email TEXT NOT NULL UNIQUE,
-                    username TEXT
-                )
-            ''')
+            # Se elimina la tabla de usuarios ya que no se realiza validación de email
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     chat_id INTEGER,
                     role TEXT,
-                    content TEXT,
-                    FOREIGN KEY (chat_id) REFERENCES users (chat_id)
+                    content TEXT
                 )
             ''')
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_preferences (
                     chat_id INTEGER PRIMARY KEY,
                     voice_responses BOOLEAN DEFAULT 0,
-                    voice_speed FLOAT DEFAULT 1.0,
-                    FOREIGN KEY (chat_id) REFERENCES users (chat_id)
+                    voice_speed FLOAT DEFAULT 1.0
                 )
             ''')
             conn.commit()
@@ -413,9 +405,6 @@ class CoachBot:
 
     async def voice_settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
-        if chat_id not in self.verified_users:
-            await update.message.reply_text("❌ Por favor, verifica tu email primero usando /start")
-            return
         pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
         voice_status = "activadas" if pref['voice_responses'] else "desactivadas"
         help_text = (
@@ -429,25 +418,6 @@ class CoachBot:
             "También puedes usar estos comandos directamente en cualquier mensaje."
         )
         await update.message.reply_text(help_text, parse_mode='Markdown')
-
-    def load_verified_users(self):
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT chat_id, email FROM users')
-            rows = cursor.fetchall()
-            for chat_id, email in rows:
-                self.verified_users[chat_id] = email
-
-    def save_verified_user(self, chat_id, email, username):
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO users (chat_id, email, username)
-                VALUES (?, ?, ?)
-            ''', (chat_id, email, username))
-            conn.commit()
-        if chat_id not in self.user_preferences:
-            self.save_user_preference(chat_id, voice_responses=False, voice_speed=1.0)
 
     def save_conversation(self, chat_id, role, content):
         with closing(sqlite3.connect(self.db_path)) as conn:
@@ -484,7 +454,7 @@ class CoachBot:
     async def async_init(self):
         try:
             await self.telegram_app.initialize()
-            self.load_verified_users()
+            # Ya no se carga la verificación de usuarios, acceso libre
             if not self.started:
                 self.started = True
                 await self.telegram_app.start()
@@ -496,12 +466,8 @@ class CoachBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             chat_id = update.message.chat.id
-            if chat_id in self.verified_users:
-                await update.message.reply_text("👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?")
-            else:
-                await update.message.reply_text(
-                    "👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n\n📧 Debe ser un email autorizado para usar el servicio."
-                )
+            # Acceso libre: se saluda siempre sin validación
+            await update.message.reply_text("👋 ¡Bienvenido! ¿En qué puedo ayudarte hoy?")
             logger.info(f"Comando /start ejecutado por chat_id: {chat_id}")
         except Exception as e:
             logger.error(f"Error en start_command: {e}")
@@ -531,11 +497,8 @@ class CoachBot:
 
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
-            chat_id = update.message.chat.id
-            if chat_id in self.verified_users:
-                await self.handle_message(update, context)
-            else:
-                await self.verify_email(update, context)
+            # Acceso libre: se procesa el mensaje directamente
+            await self.handle_message(update, context)
         except Exception as e:
             logger.error(f"Error en route_message: {e}")
             await update.message.reply_text(
@@ -593,39 +556,6 @@ class CoachBot:
             print(f"Error en text_to_speech: {e}")
             return None
 
-    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        chat_id = update.message.chat.id
-        user_email = update.message.text.strip().lower()
-        username = update.message.from_user.username or "Unknown"
-        if "@" not in user_email or "." not in user_email:
-            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
-            return
-        try:
-            if not (await self.is_user_whitelisted(user_email)):
-                await update.message.reply_text("❌ Tu email no está en la lista autorizada. Contacta a soporte.")
-                return
-            thread_id = await self.get_or_create_thread(chat_id)
-            self.user_threads[chat_id] = thread_id
-            self.verified_users[chat_id] = user_email
-            self.save_verified_user(chat_id, user_email, username)
-            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
-        except Exception as e:
-            logger.error("❌ Error verificando email para " + str(chat_id) + ": " + str(e))
-            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
-
-    async def is_user_whitelisted(self, email: str) -> bool:
-        try:
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range='Usuarios!A:A'
-            ).execute()
-            values = result.get('values', [])
-            whitelist = [row[0].lower() for row in values if row]
-            return email.lower() in whitelist
-        except Exception as e:
-            logger.error("Error verificando whitelist: " + str(e))
-            return False
-
 try:
     bot = CoachBot()
 except Exception as e:
@@ -645,7 +575,8 @@ async def webhook(request: Request):
     try:
         data = await request.json()
         update = Update.de_json(data, bot.telegram_app.bot)
-        await bot.telegram_app.update_queue.put(update)
+        # Se invoca directamente el procesamiento del update
+        await bot.telegram_app.process_update(update)
         return {"status": "ok"}
     except Exception as e:
         logger.error("❌ Error procesando webhook: " + str(e))
