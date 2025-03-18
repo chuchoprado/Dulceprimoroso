@@ -316,7 +316,7 @@ class CoachBot:
             return "⚠️ Ocurrió un error al buscar productos. Por favor, intenta más tarde."
 
     async def fetch_products(self, query):
-        url = "https://script.google.com/macros/s/AKfycbzb1VZCKQgMCtOyHeC8QX_0lS0qHzue3HNeNf9YqdT7gP3EgXfoFuO-SQ8igHvZ5As0_A/exec"
+        url = "https://script.google.com/macros/s/AKfycbzA3LeOdELU35eEHMEl9ATWrvsfXTrTsQO4-nFh_iYfrT-sLiH9x8L6YZjBb3Kf1MXa/exec"
         params = {"query": query}
         logger.info(f"Consultando Google Sheets con: {params}")
         try:
