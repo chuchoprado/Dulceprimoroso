@@ -519,7 +519,7 @@ class CoachBot:
         """Manejar comando /start"""
         chat_id = update.message.chat.id
         welcome_message = (
-            "👋 ¡Hola! Soy tu Coach MeditaHub. Puedes enviarme:\n\n"
+            "👋 ¡Hola! Soy tu Asistente DulcePrimoroso. Puedes enviarme:\n\n"
             "• Mensajes de texto\n"
             "• Notas de voz (responderé con voz también)\n\n"
             "Comandos disponibles:\n"
@@ -532,7 +532,7 @@ class CoachBot:
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Mostrar ayuda e instrucciones de uso"""
         help_text = (
-            "🔍 *Guía de uso de Coach MeditaHub:*\n\n"
+            "🔍 *Guía de uso de DulcePrimoroso Assistant:*\n\n"
             "*Comandos disponibles:*\n"
             "• /start - Iniciar o reiniciar el bot\n"
             "• /voice - Configurar opciones de voz\n"
